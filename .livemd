@@ -1,0 +1,369 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# Generating Report
+
+## Parse file
+
+```elixir
+defmodule GenReport.Parser do
+  @months %{
+    "1" => "janeiro",
+    "2" => "fevereiro",
+    "3" => "março",
+    "4" => "abril",
+    "5" => "maio",
+    "6" => "junho",
+    "7" => "julho",
+    "8" => "agosto",
+    "9" => "setembro",
+    "10" => "outubro",
+    "11" => "novembro",
+    "12" => "dezembro"
+  }
+
+  def parse_file(filename) do
+    filename
+    |> File.stream!()
+    |> Enum.map(fn line -> parse_content(line) end)
+  end
+
+  def parse_content(line) do
+    line
+    |> String.downcase()
+    |> String.trim()
+    |> String.split(",")
+    |> convert_number_to_month()
+    |> convert_hours_in_integer()
+    |> convert_years_into_integer()
+  end
+
+  def convert_number_to_month(line) do
+    line
+    |> List.update_at(3, fn element -> Map.get(@months, element) end)
+  end
+
+  def convert_hours_in_integer(line) do
+    line
+    |> convert_list_position_into_integer(1)
+    |> convert_list_position_into_integer(2)
+  end
+
+  def convert_years_into_integer(line) do
+    line
+    |> convert_list_position_into_integer(4)
+  end
+
+  def convert_list_position_into_integer(line, position) do
+    line
+    |> List.update_at(position, fn element -> String.to_integer(element) end)
+  end
+
+  def get_months do
+    @months
+  end
+end
+```
+
+```output
+{:module, GenReport.Parser, <<70, 79, 82, 49, 0, 0, 14, ...>>, {:get_months, 0}}
+```
+
+## GenReport
+
+```elixir
+defmodule GenReport do
+  alias GenReport.Parser
+
+  def build(filename) do
+    file_content = Parser.parse_file(filename)
+  end
+
+  def build() do
+    {:error, "Insira o nome de um arquivo"}
+  end
+end
+```
+
+```output
+warning: variable "file_content" is unused (if the variable is not meant to be used, prefix it with an underscore)
+  .livemd#cell:5: GenReport.build/1
+
+```
+
+```output
+{:module, GenReport, <<70, 79, 82, 49, 0, 0, 6, ...>>, {:build, 0}}
+```
+
+## Section
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule GenReport.Utils do
+  @years [2016, 2017, 2018, 2019, 2020]
+  def get_all_people_names(report) do
+    report
+    |> Enum.map(fn element -> Enum.fetch!(element, 0) end)
+    |> Enum.uniq()
+  end
+
+  def sum_all_hours_per_person(report, person_name) do
+    sum =
+      report
+      |> Enum.filter(fn element -> Enum.fetch!(element, 0) == person_name end)
+      |> Enum.map(fn element -> Enum.fetch!(element, 2) end)
+      |> Enum.sum()
+
+    %{person_name => sum}
+  end
+
+  def gen_all_hours_map(file_content) do
+    names = GenReport.Utils.get_all_people_names(file_content)
+
+    Enum.map(names, fn name -> GenReport.Utils.sum_all_hours_per_person(file_content, name) end)
+  end
+
+  def gen_hours_per_month_map(file_content) do
+    get_all_people_names(file_content)
+    |> Enum.map(fn element ->
+      %{
+        element => get_hours_per_month_by_person(element, file_content)
+      }
+    end)
+  end
+
+  def get_hours_per_month_by_person(person_name, file_content) do
+    # GenReport.Parser.get_months()
+    file_content
+    |> build_person_month_array(person_name)
+  end
+
+  def build_person_month_array(file_content, person_name) do
+    month_array = Map.values(GenReport.Parser.get_months())
+
+    month_array
+    |> Enum.map(fn element -> %{element => get_hours_sum(element, person_name, file_content)} end)
+
+    # person_by_name = get_all_people_names(file_content)
+  end
+
+  def get_all_lines_with_person_name(file_content, person_name) do
+    file_content
+    |> Enum.filter(fn line -> Enum.fetch!(line, 0) == person_name end)
+  end
+
+  def get_hours_sum(month, person_name, file_content) do
+    file_content
+    |> Enum.filter(fn line ->
+      Enum.fetch!(line, 3) == month &&
+        Enum.fetch!(line, 0) == person_name
+    end)
+    |> Enum.map(fn element -> Enum.fetch!(element, 1) end)
+    |> Enum.sum()
+  end
+
+  def get_all_hours_per_year(file_content) do
+    get_all_people_names(file_content)
+    |> Enum.map(fn line ->
+      %{
+        line => get_person_hours_per_year(file_content, line)
+      }
+    end)
+  end
+
+  def get_person_hours_per_year(file_content, person_name) do
+    @years
+    |> Enum.map(fn year ->
+      %{year => get_person_hours_per_year(file_content, person_name, year)}
+    end)
+  end
+
+  def get_person_hours_per_year(file_content, person_name, year) do
+    file_content
+    |> Enum.filter(fn line ->
+      Enum.fetch!(line, 0) == person_name &&
+        Enum.fetch!(line, 4) == year
+    end)
+    |> Enum.map(fn element -> Enum.fetch!(element, 1) end)
+    |> Enum.sum()
+  end
+end
+
+file_content = GenReport.build("gen_report.csv")
+hours_per_year = GenReport.Utils.get_all_hours_per_year(file_content)
+all_hours = GenReport.Utils.gen_all_hours_map(file_content)
+hours_per_month = GenReport.Utils.gen_hours_per_month_map(file_content)
+
+%{
+  "all_hours" => all_hours,
+  "hours_per_year" => hours_per_year,
+  "hours_per_month" => hours_per_month
+}
+```
+
+```output
+%{
+  "hours_per_month" => [
+    %{
+      "daniele" => [
+        %{"janeiro" => 1130},
+        %{"outubro" => 1046},
+        %{"novembro" => 1131},
+        %{"dezembro" => 1019},
+        %{"fevereiro" => 1003},
+        %{"março" => 1177},
+        %{"abril" => 1138},
+        %{"maio" => 1170},
+        %{"junho" => 1092},
+        %{"julho" => 1135},
+        %{"agosto" => 1018},
+        %{"setembro" => 1205}
+      ]
+    },
+    %{
+      "mayk" => [
+        %{"janeiro" => 1100},
+        %{"outubro" => 1094},
+        %{"novembro" => 1257},
+        %{"dezembro" => 1159},
+        %{"fevereiro" => 1085},
+        %{"março" => 1166},
+        %{"abril" => 1016},
+        %{"maio" => 1173},
+        %{"junho" => 1190},
+        %{"julho" => 1093},
+        %{"agosto" => 1079},
+        %{"setembro" => 1114}
+      ]
+    },
+    %{
+      "giuliano" => [
+        %{"janeiro" => 1107},
+        %{"outubro" => 1123},
+        %{"novembro" => 1105},
+        %{"dezembro" => 1100},
+        %{"fevereiro" => 1173},
+        %{"março" => 1097},
+        %{"abril" => 1152},
+        %{"maio" => 1182},
+        %{"junho" => 1197},
+        %{"julho" => 1169},
+        %{"agosto" => 1126},
+        %{"setembro" => 1140}
+      ]
+    },
+    %{
+      "cleiton" => [
+        %{"janeiro" => 1271},
+        %{"outubro" => 1073},
+        %{"novembro" => 1266},
+        %{"dezembro" => 1100},
+        %{"fevereiro" => 1168},
+        %{"março" => 1091},
+        %{"abril" => 1161},
+        %{"maio" => 998},
+        %{"junho" => 1123},
+        %{"julho" => 1236},
+        %{"agosto" => 1149},
+        %{"setembro" => 1161}
+      ]
+    },
+    %{
+      "jakeliny" => [
+        %{"janeiro" => 1118},
+        %{"outubro" => 1197},
+        %{"novembro" => 1085},
+        %{"dezembro" => 1122},
+        %{"fevereiro" => 1119},
+        %{"março" => 1178},
+        %{"abril" => 1172},
+        %{"maio" => 1129},
+        %{"junho" => 1182},
+        %{"julho" => 1245},
+        %{"agosto" => 1098},
+        %{"setembro" => 1264}
+      ]
+    },
+    %{
+      "joseph" => [
+        %{"janeiro" => 1084},
+        %{"outubro" => 1058},
+        %{"novembro" => 1005},
+        %{"dezembro" => 1122},
+        %{"fevereiro" => 1202},
+        %{"março" => 1038},
+        %{"abril" => 1047},
+        %{"maio" => 1082},
+        %{"junho" => 1105},
+        %{"julho" => 1153},
+        %{"agosto" => 1167},
+        %{"setembro" => 1111}
+      ]
+    },
+    %{
+      "diego" => [
+        %{"janeiro" => 1118},
+        %{"outubro" => 928},
+        %{"novembro" => 995},
+        %{"dezembro" => 1177},
+        %{"fevereiro" => 1144},
+        %{"março" => 1029},
+        %{"abril" => 1112},
+        %{"maio" => 1082},
+        %{"junho" => 1073},
+        %{"julho" => 1099},
+        %{"agosto" => 1129},
+        %{"setembro" => 1129}
+      ]
+    },
+    %{
+      "danilo" => [
+        %{"janeiro" => 1121},
+        %{"outubro" => 1237},
+        %{"novembro" => 1122},
+        %{"dezembro" => 1149},
+        %{"fevereiro" => 1156},
+        %{"março" => 1096},
+        %{"abril" => 1232},
+        %{"maio" => 1075},
+        %{"junho" => 966},
+        %{"julho" => 1114},
+        %{"agosto" => 1200},
+        %{"setembro" => 1115}
+      ]
+    },
+    %{
+      "rafael" => [
+        %{"janeiro" => 1125},
+        %{"outubro" => 1161},
+        %{"novembro" => 1163},
+        %{"dezembro" => 965},
+        %{"fevereiro" => 1042},
+        %{"março" => 1220},
+        %{"abril" => 1171},
+        %{"maio" => 1141},
+        %{"junho" => 1218},
+        %{"julho" => 1097},
+        %{"agosto" => 1199},
+        %{"setembro" => 1095}
+      ]
+    },
+    %{
+      "vinicius" => [
+        %{"janeiro" => 1036},
+        %{"outubro" => 1113},
+        %{"novembro" => 1169},
+        %{"dezembro" => 1186},
+        %{"fevereiro" => 1102},
+        %{"março" => 1191},
+        %{"abril" => 1149},
+        %{"maio" => 1109},
+        %{"junho" => 1213},
+        %{"julho" => 979},
+        %{"agosto" => 1055},
+        %{"setembro" => 1110}
+      ]
+    }
+  ]
+}
+```
